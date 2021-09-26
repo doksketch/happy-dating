@@ -1,6 +1,6 @@
 import re
-import json
-import os
+import typing
+import pandas as pd
 
 
 # очистка текста
@@ -22,33 +22,6 @@ def preprocess_text(text):
     return text
 
 
-# добавление json в csv
-def read_append_return(filename, train_files_path, output='text', keep_list=False):
-    json_path = os.path.join(train_files_path, (filename + '.json'))
-    headings = []
-    contents = []
-    combined = []
-    with open(json_path, 'r') as f:
-        json_decode = json.load(f)
-        for data in json_decode:
-            headings.append(data.get('section_title'))
-            contents.append(data.get('text'))
-            combined.append(data.get('section_title'))
-            combined.append(data.get('text'))
-
-    if not keep_list:
-        headings = ' '.join(headings)
-        contents = ' '.join(contents)
-        combined = '\n\n '.join(combined)
-
-    if output == 'text':
-        return contents
-    elif output == 'head':
-        return headings
-    else:
-        return combined
-
-
 # приведение таргета к необходимому виду
 def prepare_labels(data):
     datasets_titles = [x.lower() for x in
@@ -64,3 +37,24 @@ def prepare_labels(data):
         labels.append(' | '.join(label))
 
     return labels
+
+
+# преобразование таргета к целому числу и обратно
+def target_integers(data, target: str):
+    targets = list(data[target].unique())
+    integers = [i for i in range(len(target))]
+
+    return targets, integers
+
+
+def encode_decode_target(data, target: str,
+                         targets: typing.List[int], integers: typing.List[int],
+                         encode: bool):
+    if encode:
+        encoding = dict(zip(targets, integers))
+        data[target] = data[target].map(encoding)
+    else:
+        decoding = dict(zip(integers, target))
+        data[target] = data[target].map(decoding)
+
+    return data
