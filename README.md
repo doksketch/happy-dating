@@ -10,3 +10,8 @@
 - Необходимо сопоставить название и содержание статьи её теме 
 - Исходные данные https://www.kaggle.com/c/coleridgeinitiative-show-us-the-data/data
 - Целевая метрика: мера схожести Жаккара
+
+
+## Ссылки на источники данных
+- Архитектура LSTM https://colah.github.io/posts/2015-08-Understanding-LSTMs/
+- Архитектура GRU https://arxiv.org/pdf/1412.3555.pdf
