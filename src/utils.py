@@ -1,7 +1,7 @@
 import re
 import typing
 import pandas as pd
-
+from torch.utils.data import DataLoader
 
 # очистка текста
 def preprocess_text(text):
@@ -58,3 +58,17 @@ def encode_decode_target(data, target: str,
         data[target] = data[target].map(decoding)
 
     return data
+
+# сбор векторизированных данных в батч
+def generate_batches(dataset, batch_size, shuffle=True,
+                     drop_last=True, device='cpu'):
+    dataloader = DataLoader(dataset=dataset, batch_size=batch_size,
+                            drop_last=drop_last, shuffle=shuffle)
+
+    for data_dict in dataloader:
+        out_data_dict = dict()
+
+        for name, tensor in data_dict.items():
+            out_data_dict[name] = data_dict[name].to(device)
+
+        yield out_data_dict

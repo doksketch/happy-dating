@@ -5,6 +5,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 from sklearn.pipeline import Pipeline
 import torch
+import torch.nn.functional
 
 
 class BaselineModel:
@@ -53,10 +54,10 @@ class ContentClassifier(torch.nn.Module):
                                              padding_idx=padding_idx)  # слой вложений
         self.rnn = torch.nn.GRU(input_size=embedding_size, hidden_size=rnn_hidden_size,
                                 batch_first=batch_first)  # реккурентная нейросеть - получаем скрытые состояния
-        self.first_layer = torch.nn.Linear(in_features=rnn_hidden_size,
-                                           out_features=rnn_hidden_size)  # сводный выходной вектор
-        self.classification_layer = torch.nn.Linear(in_features=rnn_hidden_size,
-                                                    out_features=num_classes) # вектор предсказаний
+        self.fc1 = torch.nn.Linear(in_features=rnn_hidden_size,
+                                   out_features=rnn_hidden_size)  # сводный выходной вектор
+        self.fc2 = torch.nn.Linear(in_features=rnn_hidden_size,
+                                   out_features=num_classes)  # вектор предсказаний
 
     # прямой проход классификатора
     def forward(self, x_in, x_lenghts=None, apply_softmax=True):
@@ -76,13 +77,13 @@ class ContentClassifier(torch.nn.Module):
         else:
             y_out = y_out[:, -1, :]
 
-        y_out = torch.nn.Dropout(y_out, p=0.5)
-        y_out = torch.relu(self.first_layer(y_out))
-        y_out = torch.nn.Dropout(y_out, p=0.5)
-        y_out = self.classification_layer(y_out)
+        y_out = torch.nn.functional.dropout(y_out, p=0.5)
+        y_out = torch.nn.functional.relu(self.fc1(y_out))
+        y_out = torch.nn.functional.dropout(y_out, p=0.5)
+        y_out = self.fc2(y_out)
 
         if apply_softmax:
-            y_out = torch.softmax(y_out, dim=1)
+            y_out = torch.nn.functional.softmax(y_out, dim=1)
 
         return y_out
 

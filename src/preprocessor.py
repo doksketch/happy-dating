@@ -1,42 +1,54 @@
+import numpy as np
 import pandas as pd
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
+from torch import tensor, float32
 
 
 # представление очищенного датасета в pytorch
 class DatasetModel(Dataset):
 
-    def __init__(self, data, vectorizer):
-        self.data = data
+    def __init__(self, df, vectorizer):
+        self.df = df
         self._vectorizer = vectorizer
 
-        self.train_data = self.data[self.data.split == 'train']
-        self.train_size = len(self.train_data)
+        self._max_seq_length = max(map(len, self.df.predictor)) + 2
 
-        self.valid_data = self.data[self.data.split == 'valid']
-        self.valid_size = len(self.valid_data)
+        self.train_df = self.df[self.df.split == 'train']
+        self.train_size = len(self.train_df)
 
-        self.test_data = self.data[self.data.split == 'test']
-        self.test_size = len(self.test_data)
+        self.valid_df = self.df[self.df.split == 'valid']
+        self.valid_size = len(self.valid_df)
 
-        self._lookup_dict = {'train': (self.train_data, self.train_size),
-                             'valid': (self.valid_data, self.valid_size),
-                             'test': (self.test_data, self.test_size)}
+        self.test_df = self.df[self.df.split == 'test']
+        self.test_size = len(self.test_df)
+
+        self._lookup_dict = {'train': (self.train_df, self.train_size),
+                             'valid': (self.valid_df, self.valid_size),
+                             'test': (self.test_df, self.test_size)}
 
         self.set_split('train')
 
-    # загрузка и векторизация данных на основе класса DataVectorizer
+        # веса для классов
+        class_counts = self.train_df.target.value_counts().to_dict()
+        def sort_key(item):
+            return self._vectorizer.target_vocab.lookup_token(item[0])
+        sorted_counts = sorted(class_counts.items(), key=sort_key)
+        frequences = [count for _, count in sorted_counts]
+        self.class_weights = 1.0 / tensor(frequences, dtype=float32)
+
+    # загружает данные и создаёт векторизатор
     @classmethod
-    def load_and_vectorize(cls, path):
-        data = pd.read_csv(path)
-        return cls(data, DataVector.from_dataframe(data))
+    def make_vectorizer(cls, path: str):
+        df = pd.read_csv(path)
+        train_df = df[df.split == 'train']
+        return cls(df, PredictorVectorizer.from_dataframe(train_df))
 
     def get_vectorizer(self):
-        return self._vectorizer
+        return self._vectorizer()
 
-    # выбор фрагмента данных по колонке
     def set_split(self, split='train'):
         self._target_split = split
-        self._target_data, self._target_size = self._lookup_dict[split]
+        self._target_df, self._target_size = self._lookup_dict[split]
 
     def __len__(self):
         return self._target_size
@@ -44,16 +56,83 @@ class DatasetModel(Dataset):
     # точка входа для данных в pytorch
     def __getitem__(self, index):
         "index - индекс точки данных"
-        row = self._target_data.iloc[index]
-        data_vector = self._vectorizer.vectorize(row.data)
+        row = self._target_df.iloc[index]
+        predictor_vector, vec_length = self._vectorizer.vectorize(row.predictor, self._max_seq_length)
         target_index = self._vectorizer.target_vocab.lookup_token(row.target)
 
-        return {'x_data': data_vector,
-                'y_target': target_index}
+        return {'x_data': predictor_vector,
+                'y_target': target_index,
+                'x_length': vec_length}
+
+    def get_num_batches(self, batch_size):
+        return len(self) // batch_size
+
+
+# векторизатор, приводящий словари в соотвествие друг другу и использующий их
+class PredictorVectorizer:
+
+    def __init__(self, char_vocab, target_vocab):
+        """
+        Аргументы:
+            char_vocab(Vocabulary) - последовательности в словари
+            target_vocab - таргет(категория) в словари
+        """
+        self.char_vocab = char_vocab
+        self.target_vocab = target_vocab
+
+    def vectorize(self, predictor, vector_length=-1):
+        """
+        Аргументы:
+            predictor - размер вложений символов
+            vector_length - длина вектора индексов
+        """
+
+        indices = [self.char_vocab.begin_seq_index]
+        indices.extend(self.char_vocab.lookup_token(token)
+                       for token in predictor)
+        indices.append(self.char_vocab.end_seq_index)
+
+        if vector_length < 0:
+            vector_length = len(indices)
+
+        out_vector = np.zeros(vector_length, dtype=np.int64)
+        out_vector[:len(indices)] = indices
+        out_vector[len(indices):] = self.char_vocab.mask_index
+
+        return out_vector, len(indices)
+
+    @classmethod
+    def from_dataframe(cls, df: pd.DataFrame):
+        char_vocab = SequenceVocabulary()
+        target_vocab = Vocabulary()
+
+        for index, row in df.iterrows():
+            for char in row.predictor:
+                char_vocab.add_token(char)
+            target_vocab.add_token(row.target)
+
+        return cls(char_vocab, target_vocab)
+
+    @classmethod
+    def from_serializable(cls, contents):
+        char_vocab = SequenceVocabulary.from_serializable(contents['char_vocab'])
+        target_vocab = Vocabulary.from_serializable(contents['target_vocab'])
+
+        return cls(char_vocab=char_vocab, target_vocab=target_vocab)
+
+    def to_serializable(self):
+        return {'char_vocab': self.char_vocab.to_serializable(),
+                'target_vocab': self.target_vocab.to_serializable()}
 
 
 # отображение токенов в числовую форму - технические словари
-class VectorDictionaries:
+class Vocabulary:
+    """
+    Аргументы:
+        token_to_idx: dict - соотвествие токенов индексам
+        add_unk: bool - нужно ли добавлять токен UNK
+        unk_token - добавляемый в словарь токен UNK
+    """
 
     def __init__(self, token_to_idx=None, add_unk=True, unk_token='<UNK>'):
         if token_to_idx is None:
@@ -75,7 +154,7 @@ class VectorDictionaries:
                 'add_unk': self._add_unk,
                 'unk_token': self._unk_token}
 
-    # экземпляр класса на основе словаря
+    # экземпляр класса на основе сериализованного словаря
     @classmethod
     def from_serializable(cls, contents):
         return cls(**contents)
@@ -91,7 +170,7 @@ class VectorDictionaries:
 
         return index
 
-    # извлекает соответствующий токену индекс
+    # извлекает соответствующий токену индекс или индекс UNK, если токен не найден
     def lookup_token(self, token):
         if self._add_unk:
             return self._token_to_idx.get(token, self.unk_index)
@@ -111,45 +190,34 @@ class VectorDictionaries:
         return len(self._token_to_idx)
 
 
-# преобразование текста в векторы на основе словарей класса VectorDictionaries
-class DataVector:
+# токенизация последовательностей
+class SequenceVocabulary(Vocabulary):
 
-    def __init__(self, data_vocab, target_vocab):
-        self.data_vocab = data_vocab
-        self.target_vocab = target_vocab
+    def __init__(self, token_to_idx=None, unk_token='<UNK>',
+                 mask_token="<MASK>", begin_seq_token='<BEGIN>',
+                 end_seq_token='<END>'):
 
-    # задаётся форма вектора для обзора
-    def vectorize(self, data):
-        pass
+        super(SequenceVocabulary, self).__init__(token_to_idx)
+        self._mask_token = mask_token # для работы с последовательностями переменной длины
+        self._unk_token = unk_token # для обозначения отсуствующих токенов в словаре
+        self._begin_seq_token = begin_seq_token # начало предложения
+        self._end_seq_token = end_seq_token # конец предложения
 
-    @classmethod
-    def from_dataframe(cls, data):
-        data_vocab = VectorDictionaries(add_unk=True)
-        target_vocab = VectorDictionaries(add_unk=False)
-
-        return cls(data_vocab, target_vocab)
-
-    @classmethod
-    def from_serializable(cls, contents):
-        data_vocab = VectorDictionaries.from_serializable(contents['data_vocab'])
-        target_vocab = VectorDictionaries.from_serializable(contents['target_vocab'])
-        return cls(data_vocab, target_vocab)
+        self.mask_index = self.add_token(self._mask_token)
+        self.unk_index = self.add_token(self._unk_token)
+        self._begin_seq_index = self.add_token(self._begin_seq_token)
+        self._end_seq_token = self.add_token(self._end_seq_token)
 
     def to_serializable(self):
-        return {'data_vocab': self.data_vocab.to_serializable(),
-                'target_vocab': self.target_vocab.to_serializable()}
+        contents = super(SequenceVocabulary, self).to_serializable()
+        contents.update({'unk_token': self._unk_token,
+                         'mask_token': self._mask_token,
+                         'begin_seq_token': self._begin_seq_token,
+                         'end_seq_token': self._end_seq_token})
+        return contents
 
-
-# сбор векторизированных данных в батч
-def generate_batches(dataset, batch_size, shuffle=True,
-                     drop_last=True, device='cpu'):
-    dataloader = DataLoader(dataset=dataset, batch_size=batch_size,
-                            drop_last=drop_last, shuffle=shuffle)
-
-    for data_dict in dataloader:
-        out_data_dict = dict()
-
-        for name, tensor in data_dict.items():
-            out_data_dict[name] = data_dict[name].to(device)
-
-        yield out_data_dict
+    def lookup_token(self, token):
+        if self.unk_index >= 0:
+            return self._token_to_idx.get(token, self.unk_index)
+        else:
+            return self._token_to_idx[token]
