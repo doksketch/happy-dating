@@ -1,34 +1,26 @@
-import typing
 import logging
-import pandas as pd
-from sklearn.compose import ColumnTransformer
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 from sklearn.pipeline import Pipeline
 import torch
 import torch.nn.functional
 
 
-class BaselineModel:
+class GramsClassifier:
 
-    def __init__(self, features: typing.List[str], model):
+    def __init__(self, model):
         self.model = model
-        self.features = features
-
-        self.preprocessor = ColumnTransformer(transformers=[
-            ('vectorizer', CountVectorizer(ngram_range=(2, 2)), self.features),  # строим биграммы
-            ('tf-idf', TfidfTransformer())
-        ])
 
         self.pipeline = Pipeline(steps=[
-            ('preprocessor', self.preprocessor),
+            ('vectorizer', CountVectorizer(ngram_range=(2, 2), max_features=50)),  # строим биграммы
+            ('tf-idf', TfidfTransformer()),
             ('model', self.model)
         ])
 
-    def fit(self, X: pd.DataFrame, y: pd.Series):
+    def fit(self, X: list, y: list):
         logging.info('Fit model')
         self.pipeline.fit(X, y)
 
-    def predict(self, X: pd.DataFrame):
+    def predict(self, X: list):
         predictions = self.pipeline.predict_proba(X)
 
         return predictions

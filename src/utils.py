@@ -40,22 +40,22 @@ def prepare_labels(data):
 
 
 # преобразование таргета к целому числу и обратно
-def target_integers(data, target: str):
-    targets = list(data[target].unique())
-    integers = [i for i in range(len(target))]
+def target_integers(data):
+    targets = list(data.unique())
+    integers = [i for i in range(len(targets))]
 
     return targets, integers
 
 
-def encode_decode_target(data, target: str,
+def encode_decode_target(data,
                          targets: typing.List[int], integers: typing.List[int],
                          encode: bool):
     if encode:
         encoding = dict(zip(targets, integers))
-        data[target] = data[target].map(encoding)
+        data = data.map(encoding)
     else:
-        decoding = dict(zip(integers, target))
-        data[target] = data[target].map(decoding)
+        decoding = dict(zip(integers, targets))
+        data = data.map(decoding)
 
     return data
 
