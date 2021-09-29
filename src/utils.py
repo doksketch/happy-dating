@@ -1,7 +1,9 @@
 import re
 import typing
-import pandas as pd
 from torch.utils.data import DataLoader
+from src.settings import rnn_params
+import torch
+
 
 # очистка текста
 def preprocess_text(text):
@@ -59,6 +61,7 @@ def encode_decode_target(data,
 
     return data
 
+
 # сбор векторизированных данных в батч
 def generate_batches(dataset, batch_size, shuffle=True,
                      drop_last=True, device='cpu'):
@@ -72,3 +75,43 @@ def generate_batches(dataset, batch_size, shuffle=True,
             out_data_dict[name] = data_dict[name].to(device)
 
         yield out_data_dict
+
+
+# для тренировки нейросети
+def get_train_state():
+    return dict(early_stop=True,
+                learning_rate=rnn_params['learning_rate'],
+                epoch_index=0,
+                train_loss=list(),
+                train_jac=list(),
+                valid_loss=list(),
+                valid_jacc=list(),
+                test_loss=-1,
+                test_jac=-1,
+                model_filname=rnn_params['model_state_file'])
+
+
+def update_train_state(model, train_state):
+    if train_state['epoch_index'] == 0:
+        torch.save(model.state_dict(), train_state['model_filename'])
+
+    # сохраняем одну наилучшую модель
+    elif train_state['epoch_index'] >= 1:
+        loss_tm1, loss_t = train_state['val_loss'][-2:]
+
+        # если лосс ухудшился, обновляем шаг ранней остановки
+        if loss_t >= loss_tm1:
+            train_state['early_stopping_step'] += 1
+        # если лосс улучшился, то сохраняем модель
+        else:
+            if loss_t < train_state['early_stopping_best_val']:
+                torch.save(model.state_dict(), train_state['model_filename'])
+                train_state['early_stopping_best_val'] = loss_t
+
+            # сбрасываем счётчик шагов ранней остановки
+            train_state['early_stopping_step'] = 0
+
+        train_state['stop_early'] = \
+            train_state['early_stopping_step'] >= rnn_params['early_stopping_criteria']
+
+        return train_state
