@@ -115,8 +115,9 @@ class PredictorVectorizer:
         target_vocab = Vocabulary()
 
         for index, row in df.iterrows():
-            for char in row.predictor:
-                char_vocab.add_token(char)
+            tokens = row.predictor.split(' ')
+            for token in tokens:
+                char_vocab.add_token(token)
             target_vocab.add_token(row.target)
 
         return cls(char_vocab, target_vocab)
@@ -213,8 +214,8 @@ class SequenceVocabulary(Vocabulary):
 
         self.mask_index = self.add_token(self._mask_token)
         self.unk_index = self.add_token(self._unk_token)
-        self._begin_seq_index = self.add_token(self._begin_seq_token)
-        self._end_seq_token = self.add_token(self._end_seq_token)
+        self.begin_seq_index = self.add_token(self._begin_seq_token)
+        self.end_seq_index = self.add_token(self._end_seq_token)
 
     def to_serializable(self):
         contents = super(SequenceVocabulary, self).to_serializable()

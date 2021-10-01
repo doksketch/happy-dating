@@ -1,4 +1,5 @@
 pandas==1.2.4
 torch==1.9.0
+torchvision==0.10.1
 wordcloud==1.8.1
 scikit-learn==0.24.1

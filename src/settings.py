@@ -8,13 +8,13 @@ logreg_params = dict(multi_class='ovr',
 
 rnn_params = dict(
     # Пути к данным
-    df="../coleridgeinitiative-show-us-the-data/train.csv",
+    df="../coleridgeinitiative-show-us-the-data/train_splitted.csv",
     vectorizer_file="vectorizer.json",
     model_state_file="model.pth",
     save_dir="../models",
     # Гиперпараметры архитектуры нейросети
-    char_embedding_size=300,
-    rnn_hidden_size=64,
+    char_embedding_size=64,
+    rnn_hidden_size=16,
     # Гиперпараметры тренировки нейросети
     num_epochs=300,
     learning_rate=1e-2,
@@ -22,8 +22,8 @@ rnn_params = dict(
     seed=1337,
     early_stopping_criteria=5,
     # Runtime hyper parameter
-    cuda=False,
+    cuda=True,
     catch_keyboard_interrupt=True,
     reload_from_files=False,
-    expand_filepaths_to_save_dir=True,
+    expand_filepaths_to_save_dir=True
 )
